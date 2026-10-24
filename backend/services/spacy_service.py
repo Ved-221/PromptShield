@@ -25,6 +25,14 @@ def get_spacy_model():
             nlp = None
     return nlp
 
+def preload_spacy_model() -> bool:
+    model = get_spacy_model()
+    if model is None:
+        logger.error("CRITICAL: Failed to load spaCy model 'en_core_web_sm'. spaCy NER scanning is unavailable.")
+        return False
+    logger.info("Successfully preloaded spaCy 'en_core_web_sm' model.")
+    return True
+
 ENTITY_CATEGORY_MAP = {
     "PERSON": ("PII", "Medium", "Name of an individual.", "Replace with [PERSON] placeholder."),
     "ORG": ("Organization", "Medium", "Name of a company, institution, or organization.", "Replace with [ORGANIZATION] placeholder."),
@@ -55,6 +63,7 @@ COMMON_TECH_TERMS = {
 def scan_spacy(text: str) -> List[Dict[str, Any]]:
     model = get_spacy_model()
     if not model:
+        logger.error("spaCy model unavailable. Skipping spaCy NER scan.")
         return []
 
     doc = model(text)

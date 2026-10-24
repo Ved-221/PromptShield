@@ -24,7 +24,16 @@ const SAMPLE_PROMPTS = [
 ];
 
 export const PromptEditor: React.FC = () => {
-  const { originalPrompt, setOriginalPrompt, runAnalysis, isAnalyzing, findings } = usePromptStore();
+  const {
+    originalPrompt,
+    setOriginalPrompt,
+    runAnalysis,
+    isAnalyzing,
+    findings,
+    analyzedPrompt,
+    analysisError,
+  } = usePromptStore();
+
   const [localText, setLocalText] = useState(originalPrompt);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -63,12 +72,17 @@ export const PromptEditor: React.FC = () => {
   // Construct highlighted overlay JSX
   const renderHighlights = () => {
     if (!localText) return null;
-    if (!findings || findings.length === 0) return localText;
+
+    // Render <mark> overlays only when analyzedPrompt === localText;
+    // otherwise render plain text (offsets are stale while typing)
+    if (analyzedPrompt !== localText || !findings || findings.length === 0) {
+      return localText;
+    }
 
     const elements: React.ReactNode[] = [];
     let lastIndex = 0;
 
-    // Findings are already non-overlapping
+    // Findings are non-overlapping
     const sorted = [...findings].sort((a, b) => a.start - b.start);
 
     sorted.forEach((f, i) => {
@@ -77,7 +91,7 @@ export const PromptEditor: React.FC = () => {
         elements.push(localText.substring(lastIndex, f.start));
       }
 
-      // Highlighted text span
+      // Highlighted text span without text-metric-altering padding effects
       const matched = localText.substring(f.start, f.end);
       const hlClass =
         f.risk_level === 'Critical'
@@ -89,7 +103,7 @@ export const PromptEditor: React.FC = () => {
           : 'hl-low';
 
       elements.push(
-        <mark key={`hl_${f.id}_${i}`} className={`${hlClass} font-mono px-0.5 rounded cursor-pointer`}>
+        <mark key={`hl_${f.id}_${i}`} className={`${hlClass} font-mono cursor-pointer`}>
           {matched}
         </mark>
       );
@@ -109,7 +123,6 @@ export const PromptEditor: React.FC = () => {
 
   return (
     <div className="glass-panel rounded-2xl p-5 shadow-xl border border-slate-800 flex flex-col space-y-4">
-      
       {/* Header & Quick Preset Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
         <div className="flex items-center space-x-2">
@@ -153,7 +166,6 @@ export const PromptEditor: React.FC = () => {
 
       {/* Textarea Container with Highlight Overlay */}
       <div className="relative w-full h-56 rounded-xl bg-slate-950/80 border border-slate-800 overflow-hidden group focus-within:border-cyan-500/50 transition-colors">
-        
         {/* Backdrop Highlight Layer */}
         <div
           ref={backdropRef}
@@ -182,7 +194,12 @@ export const PromptEditor: React.FC = () => {
           <span>{wordCount} words</span>
         </div>
         <div className="flex items-center space-x-2">
-          {findings.length > 0 ? (
+          {analysisError ? (
+            <span className="flex items-center text-rose-400 font-medium">
+              <AlertTriangle className="w-3.5 h-3.5 mr-1 text-rose-400 shrink-0" />
+              {analysisError}
+            </span>
+          ) : findings.length > 0 ? (
             <span className="flex items-center text-amber-400 font-medium">
               <AlertTriangle className="w-3.5 h-3.5 mr-1" />
               {findings.length} sensitive item{findings.length > 1 ? 's' : ''} detected
@@ -195,7 +212,6 @@ export const PromptEditor: React.FC = () => {
           ) : null}
         </div>
       </div>
-
     </div>
   );
 };

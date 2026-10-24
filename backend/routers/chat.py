@@ -1,17 +1,18 @@
 import os
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 import httpx
 from schemas import ChatRequest, ChatResponse
 from services.regex_service import scan_regex
 from services.spacy_service import scan_spacy
 from services.presidio_service import scan_presidio
 from services.merge_service import merge_findings, generate_sanitized_prompt
+from services.rate_limiter import rate_limit_chat
 
 logger = logging.getLogger("PromptShield.Chat")
 router = APIRouter(prefix="", tags=["Chat"])
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat", response_model=ChatResponse, dependencies=[Depends(rate_limit_chat)])
 async def chat_with_llm(req: ChatRequest):
     prompt_text = req.prompt.strip()
     if not prompt_text:

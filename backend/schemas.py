@@ -1,5 +1,14 @@
+import os
 from typing import List, Dict, Optional
 from pydantic import BaseModel, Field
+
+def get_max_prompt_chars() -> int:
+    try:
+        return int(os.getenv("PROMPTSHIELD_MAX_PROMPT_CHARS", "20000"))
+    except ValueError:
+        return 20000
+
+MAX_PROMPT_CHARS = get_max_prompt_chars()
 
 class Finding(BaseModel):
     id: str
@@ -16,11 +25,11 @@ class Finding(BaseModel):
     source: str = "Engine"
 
 class AnalyzeRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(min_length=0, max_length=MAX_PROMPT_CHARS)
 
 class SanitizeRequest(BaseModel):
-    prompt: str
-    findings: List[Finding]
+    prompt: str = Field(min_length=0, max_length=MAX_PROMPT_CHARS)
+    findings: List[Finding] = Field(default_factory=list, max_length=500)
     actions: Optional[Dict[str, str]] = Field(default_factory=dict)  # finding_id -> "replace" | "remove" | "keep"
 
 class StatsSummary(BaseModel):
@@ -40,7 +49,7 @@ class AnalyzeResponse(BaseModel):
     stats: StatsSummary
 
 class ChatRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(min_length=0, max_length=MAX_PROMPT_CHARS)
     model: Optional[str] = "meta-llama/llama-3.3-70b-instruct:free"
 
 class ChatResponse(BaseModel):

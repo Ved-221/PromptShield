@@ -31,6 +31,14 @@ def get_presidio_analyzer():
             analyzer = None
     return analyzer
 
+def preload_presidio_analyzer() -> bool:
+    engine = get_presidio_analyzer()
+    if engine is None:
+        logger.error("CRITICAL: Failed to load Presidio AnalyzerEngine. Presidio PII scanning is unavailable.")
+        return False
+    logger.info("Successfully preloaded Presidio AnalyzerEngine.")
+    return True
+
 PRESIDIO_MAP = {
     "EMAIL_ADDRESS": ("EMAIL", "PII", "High", "[EMAIL]", "Detected email address via Presidio."),
     "PHONE_NUMBER": ("PHONE", "PII", "High", "[PHONE_NUMBER]", "Detected phone number via Presidio."),
@@ -53,6 +61,7 @@ COMMON_TECH_TERMS = {
 def scan_presidio(text: str) -> List[Dict[str, Any]]:
     engine = get_presidio_analyzer()
     if not engine:
+        logger.error("Presidio AnalyzerEngine unavailable. Skipping Presidio PII scan.")
         return []
 
     try:

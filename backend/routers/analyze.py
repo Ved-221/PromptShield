@@ -9,7 +9,7 @@ from services.risk_service import compute_risk_score
 router = APIRouter(prefix="", tags=["Analyze"])
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-async def analyze_prompt(req: AnalyzeRequest):
+def analyze_prompt(req: AnalyzeRequest):
     prompt_text = req.prompt.strip()
     if not prompt_text:
         return AnalyzeResponse(
