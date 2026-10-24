@@ -40,8 +40,8 @@ async def analyze_prompt(req: AnalyzeRequest):
     # Combine all raw findings
     all_raw = regex_results + spacy_results + presidio_results
 
-    # 4. Merge overlaps & resolve conflicts
-    merged_findings = merge_findings(all_raw)
+    # 4. Merge overlaps & resolve conflicts (with prompt text context)
+    merged_findings = merge_findings(all_raw, prompt_text)
 
     # 5. Compute default sanitized prompt
     sanitized = generate_sanitized_prompt(prompt_text, merged_findings)
@@ -60,5 +60,12 @@ async def analyze_prompt(req: AnalyzeRequest):
 
 @router.post("/sanitize")
 async def sanitize_prompt(req: SanitizeRequest):
-    sanitized = generate_sanitized_prompt(req.prompt, req.findings, req.actions)
+    if len(req.findings) > 500:
+        raise HTTPException(status_code=422, detail="Findings list exceeds maximum limit of 500 items.")
+
+    try:
+        sanitized = generate_sanitized_prompt(req.prompt, req.findings, req.actions)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
     return {"sanitized_prompt": sanitized}

@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { Finding, RiskLevel, StatsSummary, ChatMessage, ActionOverride } from '../lib/types';
-import { analyzePrompt, sanitizePrompt, sendToLLM } from '../lib/api';
+import { analyzePrompt, sendToLLM } from '../lib/api';
+import { applySanitization } from '../lib/sanitize';
 
 interface PromptState {
   originalPrompt: string;
+  analyzedPrompt: string;
   findings: Finding[];
   actions: Record<string, ActionOverride>;
   sanitizedPrompt: string;
@@ -11,20 +13,24 @@ interface PromptState {
   riskLevel: RiskLevel;
   stats: StatsSummary | null;
   isAnalyzing: boolean;
-  
+  analysisError: string | null;
+
   chatMessages: ChatMessage[];
   isChatLoading: boolean;
 
   setOriginalPrompt: (text: string) => void;
   runAnalysis: (text: string) => Promise<void>;
-  setActionOverride: (findingId: string, action: ActionOverride) => Promise<void>;
-  resetAllActions: () => Promise<void>;
+  setActionOverride: (findingId: string, action: ActionOverride) => void;
+  resetAllActions: () => void;
   sendChat: () => Promise<void>;
   clearChat: () => void;
 }
 
+let activeRequestId = 0;
+
 export const usePromptStore = create<PromptState>((set, get) => ({
   originalPrompt: '',
+  analyzedPrompt: '',
   findings: [],
   actions: {},
   sanitizedPrompt: '',
@@ -32,6 +38,7 @@ export const usePromptStore = create<PromptState>((set, get) => ({
   riskLevel: 'Safe',
   stats: null,
   isAnalyzing: false,
+  analysisError: null,
 
   chatMessages: [],
   isChatLoading: false,
@@ -41,26 +48,37 @@ export const usePromptStore = create<PromptState>((set, get) => ({
   },
 
   runAnalysis: async (text: string) => {
+    const currentReqId = ++activeRequestId;
+
     if (!text.trim()) {
       set({
+        originalPrompt: text,
+        analyzedPrompt: text,
         findings: [],
         actions: {},
         sanitizedPrompt: '',
         privacyScore: 100,
         riskLevel: 'Safe',
         stats: null,
-        isAnalyzing: false
+        isAnalyzing: false,
+        analysisError: null,
       });
       return;
     }
 
-    set({ isAnalyzing: true });
+    set({ isAnalyzing: true, analysisError: null });
+
     try {
       const result = await analyzePrompt(text);
-      
+
+      // Discard stale out-of-order response
+      if (currentReqId !== activeRequestId) {
+        return;
+      }
+
       // Default all findings to 'replace'
       const initialActions: Record<string, ActionOverride> = {};
-      result.findings.forEach(f => {
+      result.findings.forEach((f) => {
         initialActions[f.id] = 'replace';
       });
 
@@ -68,61 +86,83 @@ export const usePromptStore = create<PromptState>((set, get) => ({
         findings: result.findings,
         actions: initialActions,
         sanitizedPrompt: result.sanitized_prompt,
+        analyzedPrompt: text, // Set ONLY when analysis result for exactly this text is applied
         privacyScore: result.privacy_score,
         riskLevel: result.risk_level,
         stats: result.stats,
-        isAnalyzing: false
+        isAnalyzing: false,
+        analysisError: null,
       });
-    } catch (err) {
-      console.error("Analysis failed", err);
-      set({ isAnalyzing: false });
+    } catch (err: any) {
+      if (currentReqId !== activeRequestId) {
+        return;
+      }
+      const errorMsg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        'Analysis failed. Please check backend connection.';
+      console.error('Analysis failed', err);
+      set({
+        isAnalyzing: false,
+        analysisError: typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg),
+      });
     }
   },
 
-  setActionOverride: async (findingId: string, action: ActionOverride) => {
+  setActionOverride: (findingId: string, action: ActionOverride) => {
     const { originalPrompt, findings, actions } = get();
     const updatedActions = { ...actions, [findingId]: action };
-    set({ actions: updatedActions });
-
-    try {
-      const newSanitized = await sanitizePrompt(originalPrompt, findings, updatedActions);
-      set({ sanitizedPrompt: newSanitized });
-    } catch (err) {
-      console.error("Sanitization update failed", err);
-    }
+    const newSanitized = applySanitization(originalPrompt, findings, updatedActions);
+    set({
+      actions: updatedActions,
+      sanitizedPrompt: newSanitized,
+    });
   },
 
-  resetAllActions: async () => {
+  resetAllActions: () => {
     const { originalPrompt, findings } = get();
     const resetActions: Record<string, ActionOverride> = {};
-    findings.forEach(f => {
+    findings.forEach((f) => {
       resetActions[f.id] = 'replace';
     });
-    set({ actions: resetActions });
-
-    try {
-      const newSanitized = await sanitizePrompt(originalPrompt, findings, resetActions);
-      set({ sanitizedPrompt: newSanitized });
-    } catch (err) {
-      console.error("Reset sanitization failed", err);
-    }
+    const newSanitized = applySanitization(originalPrompt, findings, resetActions);
+    set({
+      actions: resetActions,
+      sanitizedPrompt: newSanitized,
+    });
   },
 
   sendChat: async () => {
-    const { sanitizedPrompt, originalPrompt, chatMessages } = get();
-    const targetPrompt = sanitizedPrompt || originalPrompt;
-    if (!targetPrompt.trim()) return;
+    const {
+      sanitizedPrompt,
+      originalPrompt,
+      analyzedPrompt,
+      isAnalyzing,
+      analysisError,
+      chatMessages,
+      isChatLoading,
+    } = get();
+
+    // Prevent sending under blocked conditions
+    if (isChatLoading) return;
+    if (!originalPrompt.trim()) return;
+    if (isAnalyzing || analysisError) return;
+    if (analyzedPrompt !== originalPrompt) return;
+    if (!sanitizedPrompt.trim()) return;
+
+    // NEVER fallback to originalPrompt
+    const targetPrompt = sanitizedPrompt;
 
     const userMsg: ChatMessage = {
       id: `user_${Date.now()}`,
       role: 'user',
       content: targetPrompt,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
 
     set({
       chatMessages: [...chatMessages, userMsg],
-      isChatLoading: true
+      isChatLoading: true,
     });
 
     try {
@@ -132,26 +172,31 @@ export const usePromptStore = create<PromptState>((set, get) => ({
         role: 'assistant',
         content: res.response,
         modelUsed: res.model_used,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
 
       set({
         chatMessages: [...get().chatMessages, assistantMsg],
-        isChatLoading: false
+        isChatLoading: false,
       });
-    } catch (err) {
+    } catch (err: any) {
+      const errorDetail =
+        err?.response?.data?.detail ||
+        '⚠️ Error sending prompt to LLM. Please check backend connection.';
       const errorMsg: ChatMessage = {
         id: `assistant_err_${Date.now()}`,
         role: 'assistant',
-        content: "⚠️ Error sending prompt to LLM. Please check backend connection.",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        content: typeof errorDetail === 'string' ? `⚠️ ${errorDetail}` : JSON.stringify(errorDetail),
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       };
       set({
         chatMessages: [...get().chatMessages, errorMsg],
-        isChatLoading: false
+        isChatLoading: false,
       });
     }
   },
 
-  clearChat: () => set({ chatMessages: [] })
+  clearChat: () => {
+    set({ chatMessages: [] });
+  },
 }));
