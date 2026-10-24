@@ -1,5 +1,6 @@
 import re
 from typing import List, Dict, Any
+from services.validators import luhn_ok, verhoeff_ok
 
 REGEX_PATTERNS: List[Dict[str, Any]] = [
     {
@@ -25,12 +26,13 @@ REGEX_PATTERNS: List[Dict[str, Any]] = [
     {
         "type": "CREDIT_CARD",
         "category": "Financial",
-        "pattern": r"\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|6(?:011|5[0-9][0-9])[0-9]{12}|3[47][0-9]{13}|3(?:0[0-5]|[68][0-9])[0-9]{11}|(?:2131|1800|35\d{3})\d{11})\b",
+        "pattern": r"\b(?:4[0-9]{3}(?:[\s-]?[0-9]{4}){3}|4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{2}(?:[\s-]?[0-9]{4}){3}|5[1-5][0-9]{14}|6(?:011|5[0-9]{2})(?:[\s-]?[0-9]{4}){3}|3[47][0-9]{2}[\s-]?[0-9]{6}[\s-]?[0-9]{5})\b",
         "risk_level": "Critical",
         "confidence": 0.99,
-        "reason": "Detected credit or debit card number string.",
+        "reason": "Detected credit or debit card number string passing Luhn verification.",
         "recommendation": "Never share card numbers with AI services. Remove immediately.",
-        "placeholder": "[CREDIT_CARD]"
+        "placeholder": "[CREDIT_CARD]",
+        "validator": luhn_ok
     },
     {
         "type": "OPENAI_KEY",
@@ -61,6 +63,17 @@ REGEX_PATTERNS: List[Dict[str, Any]] = [
         "reason": "Detected GitHub Personal Access Token.",
         "recommendation": "Remove token to protect code repositories.",
         "placeholder": "[GITHUB_TOKEN]"
+    },
+    {
+        "type": "BEARER_TOKEN",
+        "category": "Authentication",
+        "pattern": r"(?i)\bBearer\s+([A-Za-z0-9._~+/=-]{16,})",
+        "risk_level": "Critical",
+        "confidence": 0.99,
+        "reason": "Detected HTTP Bearer authentication token.",
+        "recommendation": "Redact authentication token to prevent unauthorized API access.",
+        "placeholder": "[BEARER_TOKEN]",
+        "group": 1
     },
     {
         "type": "JWT_TOKEN",
@@ -95,12 +108,13 @@ REGEX_PATTERNS: List[Dict[str, Any]] = [
     {
         "type": "PASSWORD_IN_TEXT",
         "category": "Authentication",
-        "pattern": r"(?i)\b(?:password|passwd|pwd|secret_key|api_secret)\s*[:=]\s*['\"]?([^\s'\"]{4,})['\"]?",
+        "pattern": r"(?i)[\w.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|auth)[\w.-]*\s*[:=]\s*['\"]?([^\s'\"]{4,})['\"]?",
         "risk_level": "Critical",
-        "confidence": 0.92,
+        "confidence": 0.95,
         "reason": "Detected password or secret assignment in key-value format.",
-        "recommendation": "Remove plain-text passwords.",
-        "placeholder": "[PASSWORD]"
+        "recommendation": "Remove plain-text passwords and secret values.",
+        "placeholder": "[PASSWORD]",
+        "group": 1
     },
     {
         "type": "SSN",
@@ -117,10 +131,11 @@ REGEX_PATTERNS: List[Dict[str, Any]] = [
         "category": "PII",
         "pattern": r"\b[2-9]{1}\d{3}\s?\d{4}\s?\d{4}\b",
         "risk_level": "Critical",
-        "confidence": 0.90,
-        "reason": "Detected 12-digit Indian Aadhaar number format.",
+        "confidence": 0.95,
+        "reason": "Detected 12-digit Indian Aadhaar number passing Verhoeff verification.",
         "recommendation": "Redact government identification numbers.",
-        "placeholder": "[AADHAAR_NUMBER]"
+        "placeholder": "[AADHAAR_NUMBER]",
+        "validator": verhoeff_ok
     },
     {
         "type": "PAN",
@@ -160,14 +175,24 @@ def scan_regex(text: str) -> List[Dict[str, Any]]:
     for rule in REGEX_PATTERNS:
         matches = re.finditer(rule["pattern"], text)
         for m in matches:
-            # Handle full match or capture group if password assignment match
-            matched_text = m.group(0)
-            start_pos = m.start()
-            end_pos = m.end()
+            target_group = rule.get("group", 0)
+            matched_text = m.group(target_group)
+            start_pos = m.start(target_group)
+            end_pos = m.end(target_group)
 
-            # Skip common local IP if needed, or keep
+            # Skip common local IP
             if rule["type"] == "IP_ADDRESS" and matched_text in ("127.0.0.1", "0.0.0.0"):
                 continue
+
+            # Skip HTTP scheme words matching PASSWORD_IN_TEXT (e.g. "Bearer" or "Basic")
+            if rule["type"] == "PASSWORD_IN_TEXT" and matched_text.lower() in ("bearer", "basic"):
+                continue
+
+            # Run post-match validator if rule specifies one
+            validator = rule.get("validator")
+            if validator and callable(validator):
+                if not validator(matched_text):
+                    continue
 
             findings.append({
                 "id": f"regex_{idx}",
