@@ -27,11 +27,6 @@ class Finding(BaseModel):
 class AnalyzeRequest(BaseModel):
     prompt: str = Field(min_length=0, max_length=MAX_PROMPT_CHARS)
 
-class SanitizeRequest(BaseModel):
-    prompt: str = Field(min_length=0, max_length=MAX_PROMPT_CHARS)
-    findings: List[Finding] = Field(default_factory=list, max_length=500)
-    actions: Optional[Dict[str, str]] = Field(default_factory=dict)  # finding_id -> "replace" | "remove" | "keep"
-
 class StatsSummary(BaseModel):
     total_findings: int
     critical_count: int

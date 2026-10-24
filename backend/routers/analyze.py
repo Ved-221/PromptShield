@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from schemas import AnalyzeRequest, AnalyzeResponse, SanitizeRequest
+from fastapi import APIRouter
+from schemas import AnalyzeRequest, AnalyzeResponse
 from services.regex_service import scan_regex
 from services.spacy_service import scan_spacy
 from services.presidio_service import scan_presidio
@@ -57,15 +57,3 @@ def analyze_prompt(req: AnalyzeRequest):
         risk_level=risk_level,
         stats=stats
     )
-
-@router.post("/sanitize")
-async def sanitize_prompt(req: SanitizeRequest):
-    if len(req.findings) > 500:
-        raise HTTPException(status_code=422, detail="Findings list exceeds maximum limit of 500 items.")
-
-    try:
-        sanitized = generate_sanitized_prompt(req.prompt, req.findings, req.actions)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-
-    return {"sanitized_prompt": sanitized}

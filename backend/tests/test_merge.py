@@ -269,3 +269,64 @@ def test_merge_non_overlapping_untouched():
     assert len(merged) == 2
     assert merged[0].start == 6 and merged[0].end == 10
     assert merged[1].start == 16 and merged[1].end == 20
+
+def test_sanitization_whitespace_normalization():
+    from services.merge_service import generate_sanitized_prompt
+    from schemas import Finding
+
+    prompt = "Mail a@b.com now"
+    f = Finding(
+        id="f1",
+        text="a@b.com",
+        type="EMAIL",
+        category="PII",
+        start=5,
+        end=12,
+        confidence=0.99,
+        risk_level="High",
+        reason="Email",
+        recommendation="Redact",
+        placeholder="[EMAIL]",
+        source="Regex"
+    )
+    result = generate_sanitized_prompt(prompt, [f], {"f1": "remove"})
+    assert result == "Mail now"
+
+def test_sanitization_remove_at_start_and_end():
+    from services.merge_service import generate_sanitized_prompt
+    from schemas import Finding
+
+    prompt_start = "a@b.com now"
+    f_start = Finding(
+        id="f1",
+        text="a@b.com",
+        type="EMAIL",
+        category="PII",
+        start=0,
+        end=7,
+        confidence=0.99,
+        risk_level="High",
+        reason="Email",
+        recommendation="Redact",
+        placeholder="[EMAIL]",
+        source="Regex"
+    )
+    assert generate_sanitized_prompt(prompt_start, [f_start], {"f1": "remove"}) == "now"
+
+    prompt_end = "Mail a@b.com"
+    f_end = Finding(
+        id="f2",
+        text="a@b.com",
+        type="EMAIL",
+        category="PII",
+        start=5,
+        end=12,
+        confidence=0.99,
+        risk_level="High",
+        reason="Email",
+        recommendation="Redact",
+        placeholder="[EMAIL]",
+        source="Regex"
+    )
+    assert generate_sanitized_prompt(prompt_end, [f_end], {"f2": "remove"}) == "Mail"
+

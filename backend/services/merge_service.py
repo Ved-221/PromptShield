@@ -10,8 +10,6 @@ SEVERITY_ORDER = {
     "Low": 1
 }
 
-SEVERITY_NAMES = {v: k for k, v in SEVERITY_ORDER.items()}
-
 def merge_findings(raw_findings: List[Dict[str, Any]], prompt: str = "") -> List[Finding]:
     """
     Unions overlapping and adjacent-overlapping findings into single non-overlapping spans.
@@ -56,10 +54,6 @@ def merge_findings(raw_findings: List[Dict[str, Any]], prompt: str = "") -> List
         start = min(f["start"] for f in cluster)
         end = max(f["end"] for f in cluster)
 
-        # Determine highest severity
-        max_sev_rank = max(SEVERITY_ORDER.get(f.get("risk_level", "Low"), 1) for f in cluster)
-        risk_level = SEVERITY_NAMES.get(max_sev_rank, "Low")
-
         # Determine highest confidence
         max_confidence = round(max(float(f.get("confidence", 0.0)) for f in cluster), 2)
 
@@ -72,6 +66,7 @@ def merge_findings(raw_findings: List[Dict[str, Any]], prompt: str = "") -> List
             return (sev_rank, conf, span_len)
 
         dominant = max(cluster, key=dominant_key)
+        risk_level = dominant.get("risk_level", "Low")
 
         # Collect unique contributing detector sources
         sources: List[str] = []

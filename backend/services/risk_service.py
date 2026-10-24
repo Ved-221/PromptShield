@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import List, Tuple, Dict
 from schemas import Finding, StatsSummary
 
@@ -20,29 +21,13 @@ def compute_risk_score(findings: List[Finding]) -> Tuple[int, str, StatsSummary]
         )
         return 100, "Safe", empty_stats
 
-    total_penalty = 0
-    crit_cnt = 0
-    high_cnt = 0
-    med_cnt = 0
-    low_cnt = 0
-    by_cat: Dict[str, int] = {}
+    sev_counts = Counter(f.risk_level for f in findings)
+    crit_cnt = sev_counts["Critical"]
+    high_cnt = sev_counts["High"]
+    med_cnt = sev_counts["Medium"]
+    low_cnt = sev_counts["Low"]
 
-    for f in findings:
-        sev = f.risk_level
-        total_penalty += PENALTIES.get(sev, 5)
-
-        if sev == "Critical":
-            crit_cnt += 1
-        elif sev == "High":
-            high_cnt += 1
-        elif sev == "Medium":
-            med_cnt += 1
-        else:
-            low_cnt += 1
-
-        cat = f.category
-        by_cat[cat] = by_cat.get(cat, 0) + 1
-
+    total_penalty = sum(PENALTIES.get(f.risk_level, 5) for f in findings)
     score = max(0, 100 - total_penalty)
 
     if score >= 95 and not crit_cnt and not high_cnt:
@@ -62,7 +47,7 @@ def compute_risk_score(findings: List[Finding]) -> Tuple[int, str, StatsSummary]
         high_count=high_cnt,
         medium_count=med_cnt,
         low_count=low_cnt,
-        by_category=by_cat
+        by_category=dict(Counter(f.category for f in findings))
     )
 
     return score, overall_risk, stats

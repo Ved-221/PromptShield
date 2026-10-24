@@ -15,9 +15,6 @@ def test_input_limits_rejected_over_max():
     res_analyze = client.post("/analyze", json={"prompt": large_prompt})
     assert res_analyze.status_code == 422
 
-    res_sanitize = client.post("/sanitize", json={"prompt": large_prompt, "findings": []})
-    assert res_sanitize.status_code == 422
-
     res_chat = client.post("/chat", json={"prompt": large_prompt})
     assert res_chat.status_code == 422
 

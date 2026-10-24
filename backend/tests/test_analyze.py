@@ -38,28 +38,6 @@ def test_analyze_sensitive_prompt():
     assert "[EMAIL]" in data["sanitized_prompt"]
     assert "[OPENAI_API_KEY]" in data["sanitized_prompt"]
 
-def test_sanitize_override():
-    sensitive_prompt = "Contact me at alice@company.com"
-    resp_analyze = client.post("/analyze", json={"prompt": sensitive_prompt})
-    data = resp_analyze.json()
-    finding_id = data["findings"][0]["id"]
-
-    # Test "keep" override
-    resp_keep = client.post("/sanitize", json={
-        "prompt": sensitive_prompt,
-        "findings": data["findings"],
-        "actions": {finding_id: "keep"}
-    })
-    assert resp_keep.json()["sanitized_prompt"] == sensitive_prompt
-
-    # Test "remove" override
-    resp_remove = client.post("/sanitize", json={
-        "prompt": sensitive_prompt,
-        "findings": data["findings"],
-        "actions": {finding_id: "remove"}
-    })
-    assert "alice@company.com" not in resp_remove.json()["sanitized_prompt"]
-
 def test_chat_endpoint():
     response = client.post("/chat", json={"prompt": "Hello AI!"})
     assert response.status_code == 200

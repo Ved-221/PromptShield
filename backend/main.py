@@ -9,8 +9,8 @@ load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import analyze, chat
-from services.spacy_service import preload_spacy_model
-from services.presidio_service import preload_presidio_analyzer
+from services.spacy_service import get_spacy_model
+from services.presidio_service import get_presidio_analyzer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("PromptShield")
@@ -18,13 +18,15 @@ logger = logging.getLogger("PromptShield")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up PromptShield backend...")
-    spacy_ok = preload_spacy_model()
-    if not spacy_ok:
-        logger.error("CRITICAL: spaCy model preload failed; NER scanning will be non-functional.")
+    spacy_model = get_spacy_model()
+    if spacy_model is None:
+        logger.error("CRITICAL: Failed to load spaCy model 'en_core_web_sm'. spaCy NER scanning is unavailable.")
+        raise RuntimeError("Missing required spaCy model 'en_core_web_sm'")
 
-    presidio_ok = preload_presidio_analyzer()
-    if not presidio_ok:
-        logger.error("CRITICAL: Presidio AnalyzerEngine preload failed; PII scanning will be non-functional.")
+    presidio_engine = get_presidio_analyzer()
+    if presidio_engine is None:
+        logger.error("CRITICAL: Presidio AnalyzerEngine preload failed; PII scanning is unavailable.")
+        raise RuntimeError("Failed to initialize Presidio AnalyzerEngine")
 
     yield
     logger.info("PromptShield backend shutting down.")

@@ -14,24 +14,9 @@ def get_spacy_model():
     try:
         nlp = spacy.load("en_core_web_sm")
     except Exception as e:
-        logger.warning(f"Could not load spacy en_core_web_sm model: {e}. Attempting download or fallback...")
-        try:
-            # pyrefly: ignore [missing-import]
-            from spacy.cli import download
-            download("en_core_web_sm")
-            nlp = spacy.load("en_core_web_sm")
-        except Exception as ex:
-            logger.error(f"Failed to download en_core_web_sm: {ex}")
-            nlp = None
+        logger.error(f"Failed to load spaCy model 'en_core_web_sm': {e}")
+        nlp = None
     return nlp
-
-def preload_spacy_model() -> bool:
-    model = get_spacy_model()
-    if model is None:
-        logger.error("CRITICAL: Failed to load spaCy model 'en_core_web_sm'. spaCy NER scanning is unavailable.")
-        return False
-    logger.info("Successfully preloaded spaCy 'en_core_web_sm' model.")
-    return True
 
 ENTITY_CATEGORY_MAP = {
     "PERSON": ("PII", "Medium", "Name of an individual.", "Replace with [PERSON] placeholder."),
